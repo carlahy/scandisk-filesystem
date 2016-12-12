@@ -16,7 +16,7 @@
 #include "fat.h"
 #include "dos.h"
 
-//Returns the number of clusters for a file
+//Returns the number of clusters for a file, excluding EOF cluster
 uint32_t get_file_fat_length(uint16_t cluster, uint8_t *image_buf, struct bpb33* bpb) {
 
 	uint32_t cluster_len = 0;
@@ -24,7 +24,6 @@ uint32_t get_file_fat_length(uint16_t cluster, uint8_t *image_buf, struct bpb33*
 		cluster_len++;
 		cluster = get_fat_entry(cluster, image_buf, bpb);
 	}
-
 	return cluster_len;
 }
 
@@ -57,17 +56,13 @@ void check_cluster_free(int referencedClusters[], uint8_t* image_buf, struct bpb
 	return;
 }
 
-//Traverses the FAT to follow the linked list for a file in the FAT 
+//Traverses the FAT to follow the linked list for a file
 void traverse_fat(int referencedClusters[], uint16_t cluster, uint8_t* image_buf, struct bpb33* bpb) {
 
 	while(!is_end_of_file(cluster) ) {
 		//Mark cluster as referenced
 		referencedClusters[cluster] = 1;
 		cluster = get_fat_entry(cluster, image_buf, bpb);
-		//Cluster is FREE or ROOT, either way is not correct end of file termination
-		if(cluster == 0) {
-			break;
-		}
 	} 
 	return;
 }
@@ -326,7 +321,7 @@ void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33
 		    memcpy(name, &(dirent->deName[0]), 8);
 		    memcpy(extension, dirent->deExtension, 3);
 		    if (name[0] == SLOT_EMPTY)
-			return;
+				return;
 
 		    /* skip over deleted entries */
 		    if (((uint8_t)name[0]) == SLOT_DELETED)	{
@@ -377,22 +372,25 @@ void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33
 		    	get_name(file_name, dirent);
 
 				if(file_dir_clusters != file_fat_clusters) {
-
 					printf("%s %u %u\n", file_name, file_dir_bytes, file_fat_bytes);
 
 				//Free clusters
 					//Find correct end of file cluster as specified in directory
-					for(int i = 0; i < file_dir_clusters-1; i++) {
+					for(int i = 0; i < file_dir_clusters-1; i++) { //CANADA
 						file_cluster = get_fat_entry(file_cluster, image_buf, bpb);
 					}
 
 					//Terminate the file correctly in the FAT
-					set_fat_entry(file_cluster, FAT12_MASK&CLUST_EOFS, image_buf, bpb);
+					uint16_t eof_cluster = file_cluster;
+					file_cluster = get_fat_entry(file_cluster, image_buf, bpb);
+					set_fat_entry(eof_cluster, FAT12_MASK & CLUST_EOFS, image_buf, bpb);
 
 					//Free clusters of a file that come after EOF cluster in the FAT
+					uint16_t next;
 					for(int i = 0; i < file_fat_clusters - file_dir_clusters; i++) {
-						set_fat_entry(file_cluster, FAT12_MASK&CLUST_FREE, image_buf, bpb);
-						file_cluster = get_fat_entry(file_cluster, image_buf, bpb);
+						next = get_fat_entry(file_cluster, image_buf, bpb);
+						set_fat_entry(file_cluster, FAT12_MASK & CLUST_FREE, image_buf, bpb);
+						file_cluster = next;
 					}
 				}
 		    }
@@ -405,9 +403,7 @@ void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33
 		    cluster = get_fat_entry(cluster, image_buf, bpb);
 		    dirent = (struct direntry*)cluster_to_addr(cluster, image_buf, bpb);
 		}
-
 	}
-	return;
 }
 
 void usage()
