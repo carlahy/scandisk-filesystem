@@ -17,9 +17,9 @@
 #include "dos.h"
 
 //Returns the number of clusters for a file
-int get_file_cluster_length(uint16_t cluster, uint8_t *image_buf, struct bpb33* bpb) {
+uint32_t get_file_fat_length(uint16_t cluster, uint8_t *image_buf, struct bpb33* bpb) {
 
-	int cluster_len = 0;
+	uint32_t cluster_len = 0;
 	while(!is_end_of_file(cluster) ) {
 		cluster = get_fat_entry(cluster, image_buf, bpb);
 		cluster_len++;
@@ -28,17 +28,23 @@ int get_file_cluster_length(uint16_t cluster, uint8_t *image_buf, struct bpb33* 
 }
 
 //Iterates through the array of clusters and lists the unreferenced clusters
-void find_unreferenced(int referencedClusters[], int numClusters) {
+void find_unreferenced(int referencedClusters[], int num_clusters) {
 	//The first cluster is at index 2
 	int ucount = 0;
-    printf("Unreferenced:");
-    for(int i = 2; i < numClusters; i++) {
+    int shown = 0;
+    for(int i = 2; i < num_clusters; i++) {
     	if(referencedClusters[i] != 1) {
+    		if(!shown) {
+    			printf("Unreferenced:");
+    			shown = 1;
+    		}
     		printf(" %i", i);
     		ucount++;
     	}
     }
-    printf("\nThere are %i unreferenced\n", ucount);
+    if(shown) {
+	    printf("\n");    	
+    }
 }
 
 //Iterates through the array of clusters not referenced by any file, and checks if they are free in the FAT 
@@ -51,8 +57,8 @@ void check_cluster_free(int referencedClusters[], uint8_t* image_buf, struct bpb
 	return;
 }
 
-//Follows the linked list for a file in the FAT 
-void follow_FAT(int referencedClusters[], uint16_t cluster, uint8_t* image_buf, struct bpb33* bpb) {
+//Traverses the FAT to follow the linked list for a file in the FAT 
+void traverse_fat(int referencedClusters[], uint16_t cluster, uint8_t* image_buf, struct bpb33* bpb) {
 
 	while(!is_end_of_file(cluster) ) {
 		//Mark cluster as referenced
@@ -71,11 +77,11 @@ void check_referenced_clusters(int referencedClusters[], uint16_t cluster, uint8
 	struct direntry *dirent;
     int d,i;
     dirent = (struct direntry*)cluster_to_addr(cluster, image_buf, bpb);
-    int bytesPerCluster = bpb->bpbBytesPerSec * bpb->bpbSecPerClust;
+    int cluster_bytes = bpb->bpbBytesPerSec * bpb->bpbSecPerClust;
 
     while (1) {
 
-		for (d = 0; d < bytesPerCluster; d += sizeof(struct direntry)) {
+		for (d = 0; d < cluster_bytes; d += sizeof(struct direntry)) {
 		    char name[9];
 		    char extension[4];
 		    uint16_t file_cluster;
@@ -117,13 +123,13 @@ void check_referenced_clusters(int referencedClusters[], uint16_t cluster, uint8
 		    if ((dirent->deAttributes & ATTR_VOLUME) != 0) {
 		    	//Skip over
 	    	} else if ((dirent->deAttributes & ATTR_DIRECTORY) != 0) {
-		    	//Cluster is name of a directory, keep looking for a file
+		    	//Entry is name of a directory, keep looking for a file
 				file_cluster = getushort(dirent->deStartCluster);
 				check_referenced_clusters(referencedClusters, file_cluster, image_buf, bpb);
 		    } else {
-		    	//Cluster is start of a file, follow FAT for this file and mark all clusters as referenced
+		    	//Entry is start of a file, follow FAT for this file and mark all clusters as referenced
 				uint16_t file_start_cluster = getushort(dirent->deStartCluster);
-				follow_FAT(referencedClusters, file_start_cluster, image_buf, bpb);
+				traverse_fat(referencedClusters, file_start_cluster, image_buf, bpb);
 		    }
 		    dirent++;
 		}
@@ -137,6 +143,45 @@ void check_referenced_clusters(int referencedClusters[], uint16_t cluster, uint8
 
 	}
 	return;
+}
+
+/* get_name retrieves the filename from a directory entry */
+
+void get_name(char *fullname, struct direntry *dirent) 
+{
+    char name[9];
+    char extension[4];
+    int i;
+
+    name[8] = ' ';
+    extension[3] = ' ';
+    memcpy(name, &(dirent->deName[0]), 8);
+    memcpy(extension, dirent->deExtension, 3);
+
+    /* names are space padded - remove the padding */
+    for (i = 8; i > 0; i--) {
+	if (name[i] == ' ') 
+	    name[i] = '\0';
+	else 
+	    break;
+    }
+
+    /* extensions aren't normally space padded - but remove the
+       padding anyway if it's there */
+    for (i = 3; i > 0; i--) {
+	if (extension[i] == ' ') 
+	    extension[i] = '\0';
+	else 
+	    break;
+    }
+    fullname[0]='\0';
+    strcat(fullname, name);
+
+    /* append the extension if it's not a directory */
+    if ((dirent->deAttributes & ATTR_DIRECTORY) == 0) {
+	strcat(fullname, ".");
+	strcat(fullname, extension);
+    }
 }
 
 /* Write the values into a directory entry */
@@ -221,31 +266,25 @@ void create_dirent(struct direntry *dirent, char *filename,
     }
 }
 
-void usage()
-{
-    fprintf(stderr, "Usage: dos_scandisk <imagename>\n");
-    exit(1);
-}
-
-void recover_lost_files(int referencedClusters[], int numClusters, uint8_t *image_buf, struct bpb33* bpb) {
+void recover_lost_files(int referencedClusters[], int num_clusters, uint8_t *image_buf, struct bpb33* bpb) {
 	//The first cluster is at index 2
-	//Keep track of how many files are lost
+	//Keep track of how many files are lost for file naming
 	int lost_count = 0;
 
-    for(int i = 2; i < numClusters; i++) {
+    for(int i = 2; i < num_clusters; i++) {
 
     	//Find lost file
     	if(referencedClusters[i] != 1) {
 
     		lost_count++;
 
-    		//Find lost file
-    		uint32_t file_length = get_file_cluster_length(i, image_buf, bpb);
+    	//Find lost file
+    		uint32_t file_length = get_file_fat_length(i, image_buf, bpb);
     		printf("Lost File: %i %i\n", i, file_length);
 
-    		//Recover lost file
+    	//Recover lost file
     		//Mark lost file clusters as referenced
-    		follow_FAT(referencedClusters, i, image_buf, bpb);
+    		traverse_fat(referencedClusters, i, image_buf, bpb);
 
     		struct direntry *dirent = (struct direntry*) cluster_to_addr(0, image_buf, bpb);
     		//Set file name
@@ -258,11 +297,133 @@ void recover_lost_files(int referencedClusters[], int numClusters, uint8_t *imag
     		int cluster_bytes = bpb->bpbSecPerClust * bpb->bpbBytesPerSec;
     		uint32_t file_size = file_length * cluster_bytes;
 
-    		//Create a directory entry
+    		//Create a new directory entry
     		create_dirent(dirent, file_name, start_cluster, file_size, image_buf, bpb);
     	}
     }
-    printf("\n");
+}
+
+//Free up clusters that are beyond the end of the file as specified in the directory
+void free_clusters(uint16_t from_cluster, uint16_t to_cluster, uint8_t *image_buf, struct bpb33* bpb) {
+	
+	uint16_t current = from_cluster;
+	uint16_t next;
+
+	while(1) {
+
+		next = get_fat_entry(current, image_buf, bpb);
+		//current = get_fat_entry(current, image_buf, bpb);
+
+		if(current == to_cluster || is_end_of_file(current)) {
+			break;
+		}
+
+		set_fat_entry(current, FAT12_MASK&CLUST_FREE, image_buf, bpb);
+		current = next;
+ 	}
+
+ 	//Terminate the file correctly in the FAT
+	set_fat_entry(current, FAT12_MASK&CLUST_EOFS, image_buf, bpb);
+
+	return;
+}
+
+void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33* bpb) {
+	struct direntry *dirent;
+    int d,i;
+    dirent = (struct direntry*)cluster_to_addr(cluster, image_buf, bpb);
+    int cluster_bytes = bpb->bpbSecPerClust * bpb->bpbBytesPerSec;
+
+    while (1) {
+
+		for (d = 0; d < cluster_bytes; d += sizeof(struct direntry)) {
+		    char name[9];
+		    char extension[4];
+		    uint16_t file_cluster;
+		    name[8] = ' ';
+		    extension[3] = ' ';
+		    memcpy(name, &(dirent->deName[0]), 8);
+		    memcpy(extension, dirent->deExtension, 3);
+		    if (name[0] == SLOT_EMPTY)
+			return;
+
+		    /* skip over deleted entries */
+		    if (((uint8_t)name[0]) == SLOT_DELETED)	{
+		    	continue;
+		    }
+		    /* names are space padded - remove the spaces */
+		    for (i = 8; i > 0; i--) {
+				if (name[i] == ' ') 
+				    name[i] = '\0';
+				else 
+				    break;
+		    }
+		    /* remove the spaces from extensions */
+		    for (i = 3; i > 0; i--) {
+				if (extension[i] == ' ') 
+				    extension[i] = '\0';
+				else 
+				    break;
+		    }
+		    /* skip over '.' and '..' directories */
+		    if (strcmp(name, ".")==0) {
+				dirent++;
+				continue;
+		    }
+		    if (strcmp(name, "..")==0) {
+				dirent++;
+				continue;
+		    }
+
+		    if ((dirent->deAttributes & ATTR_VOLUME) != 0) {
+		    	//Skip over
+
+	    	} else if ((dirent->deAttributes & ATTR_DIRECTORY) != 0) {
+		    	//Entry is name of a directory, keep looking for a file
+				file_cluster = getushort(dirent->deStartCluster);
+				check_length_consistency(file_cluster, image_buf, bpb);
+		    } else {
+		    	//Entry is start of a file, check for length consistency between entry and FAT
+		    	file_cluster = getushort(dirent->deStartCluster);
+
+		    	uint32_t file_fat_clusters = get_file_fat_length(file_cluster, image_buf, bpb);
+		    	uint32_t file_fat_bytes = file_fat_clusters * cluster_bytes;
+
+		    	uint32_t file_dir_bytes = getulong(dirent->deFileSize);
+		    	uint32_t file_dir_clusters = file_dir_bytes / cluster_bytes;
+
+		    	char file_name[13];
+		    	get_name(file_name, dirent);
+
+				if(file_dir_clusters != file_fat_clusters) {
+
+					printf("%s %u %u\n", file_name, file_dir_bytes, file_fat_bytes);
+
+					//Free clusters
+					uint16_t from_cluster = file_cluster + file_dir_clusters; //-1;
+					uint16_t to_cluster = file_cluster + file_fat_clusters;
+					free_clusters(from_cluster, to_cluster, image_buf, bpb);
+
+				}
+		    }
+		    dirent++;
+		}
+		if (cluster == 0) {
+		    // root dir is special
+		    dirent++;
+		} else {
+		    cluster = get_fat_entry(cluster, image_buf, bpb);
+		    dirent = (struct direntry*)cluster_to_addr(cluster, image_buf, bpb);
+		}
+
+	}
+	return;
+}
+
+void usage()
+{
+    fprintf(stderr, "Usage: dos_scandisk <imagename>\n");
+    exit(1);
 }
 
 int main(int argc, char** argv) {
@@ -278,7 +439,6 @@ int main(int argc, char** argv) {
     bpb = check_bootsector(image_buf);
 
     int num_clusters = bpb->bpbSectors / bpb->bpbSecPerClust;
-    //int cluster_bytes = bpb->bpbSecPerClust * bpb->bpbBytesPerSec;
 
     int referencedClusters[num_clusters];
     //Initialise as 0 for unreferenced
@@ -295,9 +455,11 @@ int main(int argc, char** argv) {
     //Print the unreferenced clusters
     find_unreferenced(referencedClusters, num_clusters);
 
-    //Print the lost files and their size, and recover them
+    //Print the lost files and their size, and recover them by creating new entries in directory
    	recover_lost_files(referencedClusters, num_clusters, image_buf, bpb);
 
+   	//Check consistency in file length between FAT and directory specification
+   	check_length_consistency(0,image_buf, bpb);
 
     close(fd);
     exit(0);
