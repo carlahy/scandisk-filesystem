@@ -93,7 +93,7 @@ struct bpb710 {
  * use the macros for the big-endian case.
  */
 
- #include <machine/endian.h>
+#include <endian.h>
 
 #ifdef __i386__
 #define	UNLALIGNED_ACCESS

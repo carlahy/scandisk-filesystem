@@ -32,7 +32,8 @@ uint32_t get_file_fat_length(uint16_t cluster, uint8_t *image_buf, struct bpb33*
 void find_unreferenced(int referencedClusters[], int num_clusters) {
 	//The first cluster is at index 2
     int shown = 0;
-    for(int i = 2; i < num_clusters; i++) {
+    int i;
+    for(i = 2; i < num_clusters; i++) {
     	if(referencedClusters[i] != 1) {
     		if(!shown) {
     			printf("Unreferenced:");
@@ -49,7 +50,8 @@ void find_unreferenced(int referencedClusters[], int num_clusters) {
 
 //Iterates through the array of clusters not referenced by any file, and checks if they are free in the FAT 
 void check_cluster_free(int referencedClusters[], uint8_t* image_buf, struct bpb33* bpb) {
-	for(int i=0; i < bpb->bpbSectors / bpb->bpbSecPerClust; i++) {
+	int i;
+	for(i=0; i < bpb->bpbSectors / bpb->bpbSecPerClust; i++) {
 		if(get_fat_entry(i, image_buf, bpb) == CLUST_FREE) {
 			referencedClusters[i] = 1;
 		}
@@ -272,7 +274,8 @@ void recover_lost_files(int referencedClusters[], int num_clusters, uint8_t *ima
 	int lost_count = 0;
 
 	//The first cluster is at index 2
-    for(int i = 2; i < num_clusters; i++) {
+	int i;
+   	for(i = 2; i < num_clusters; i++) {
 
     	//Find lost file
     	if(referencedClusters[i] != 1) {
@@ -376,7 +379,8 @@ void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33
 
 				//Free clusters
 					//Find correct end of file cluster as specified in directory
-					for(int i = 0; i < file_dir_clusters-1; i++) {
+					int i;
+					for(i = 0; i < file_dir_clusters-1; i++) {
 						file_cluster = get_fat_entry(file_cluster, image_buf, bpb);
 					}
 
@@ -387,7 +391,7 @@ void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33
 
 					//Free clusters of a file that come after EOF cluster in the FAT
 					uint16_t next;
-					for(int i = 0; i < file_fat_clusters - file_dir_clusters; i++) {
+					for(i = 0; i < file_fat_clusters - file_dir_clusters; i++) {
 						next = get_fat_entry(file_cluster, image_buf, bpb);
 						set_fat_entry(file_cluster, FAT12_MASK & CLUST_FREE, image_buf, bpb);
 						file_cluster = next;
@@ -428,7 +432,8 @@ int main(int argc, char** argv) {
 
     int referencedClusters[num_clusters];
     //Initialise as 0 for unreferenced
-    for(int i = 0; i < num_clusters; i++) {
+    int i;
+    for(i = 0; i < num_clusters; i++) {
     	referencedClusters[i] = 0;
     }
 
