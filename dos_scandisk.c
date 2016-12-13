@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -283,7 +284,7 @@ void recover_lost_files(int referencedClusters[], int num_clusters, uint8_t *ima
     		printf("Lost File: %i %i\n", i, file_length);
 
     	//Recover lost file
-    		//Mark lost file clusters as referenced
+    		//Mark recovered file clusters as referenced
     		traverse_fat(referencedClusters, i, image_buf, bpb);
 
     		//Set file name
@@ -308,7 +309,7 @@ void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33
 	struct direntry *dirent;
     int d,i;
     dirent = (struct direntry*)cluster_to_addr(cluster, image_buf, bpb);
-    int cluster_bytes = bpb->bpbSecPerClust * bpb->bpbBytesPerSec;
+    uint32_t cluster_bytes = bpb->bpbSecPerClust * bpb->bpbBytesPerSec;
 
     while (1) {
 
@@ -353,7 +354,6 @@ void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33
 
 		    if ((dirent->deAttributes & ATTR_VOLUME) != 0) {
 		    	//Skip over
-
 	    	} else if ((dirent->deAttributes & ATTR_DIRECTORY) != 0) {
 		    	//Entry is name of a directory, keep looking for a file
 				file_cluster = getushort(dirent->deStartCluster);
@@ -376,7 +376,7 @@ void check_length_consistency(uint16_t cluster, uint8_t* image_buf, struct bpb33
 
 				//Free clusters
 					//Find correct end of file cluster as specified in directory
-					for(int i = 0; i < file_dir_clusters-1; i++) { //CANADA
+					for(int i = 0; i < file_dir_clusters-1; i++) {
 						file_cluster = get_fat_entry(file_cluster, image_buf, bpb);
 					}
 
@@ -444,7 +444,7 @@ int main(int argc, char** argv) {
     //Print the lost files and their size, and recover them by creating new entries in directory
    	recover_lost_files(referencedClusters, num_clusters, image_buf, bpb);
 
-   	//Check consistency in file length between FAT and directory specification
+   	//Check consistency in file length between FAT and directory specification, and free clusters if necessary
    	check_length_consistency(0,image_buf, bpb);
 
     close(fd);
