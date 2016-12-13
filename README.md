@@ -20,3 +20,9 @@ The code should:
      bar.txt 4721 4096
 
 5. Free any clusters that are beyond the end of a file (as indicated by the directory entry for that file). Make sure you terminate the file correctly in the FAT.
+
+Usage:
+```
+$ make
+$ ./dos_scandisk <disk_image>.img
+```
