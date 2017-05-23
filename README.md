@@ -1,10 +1,10 @@
 # scandisk-filesystem
 
-## OS Coursework 2: Scandisk for FAT12 file system
+Scandisk for FAT12 file system
 
-The objective of this coursework is to write the equivalent of scandisk for a DOS (FAT12) filesystem on a floppy disk. Scandisk is a filesystem checker for DOS filesystems. It can check that a filesystem is internally consistent, and correct any errors found.
+The objective is to write the equivalent of scandisk for a DOS (FAT12) filesystem on a floppy disk. Scandisk is a filesystem checker for DOS filesystems. It can check that a filesystem is internally consistent, and correct any errors found.
 
-The code should:
+The code will:
 
 1. Print out a list of clusters that are not referenced from any file. Print these out separated by spaces in a single line, preceded by “Unreferenced: ”. For example: 
      Unreferenced: 5 6 7 8
